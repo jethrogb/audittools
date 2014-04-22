@@ -15,8 +15,12 @@ auditd Configuration
 
 Use with following audit.rules:
 
-	-a always,exit -F arch=b64 -S execve -S vfork -S fork -S clone -S exit -S exit_group
-	-a always,exit -F arch=b32 -S execve -S vfork -S fork -S clone -S exit -S exit_group
+	-a always,exit -F arch=b64 -S execve -S vfork -S fork -S clone -S exit -S exit_group -S connect -S bind -S sendto
+	-a always,exit -F arch=b32 -S execve -S vfork -S fork -S clone -S exit -S exit_group -S socketcall
+
+The first rule might not catch x32 syscalls. The last rule could be split into
+several rules using -F a0={2,3,11} (we only care about bind,connect,sendto),
+not sure if that is efficient. 
 
 Sample Output
 =============

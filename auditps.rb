@@ -39,6 +39,8 @@ class Event
 			  select { |k| /^a\d+$/=~k.to_s }.
 			  sort_by { |k| k.to_s }.
 			  map { |k| conv_string(hash[:execve][k]) }
+		elsif hash.include? :net then
+			@args=["#{hash[:net]}( #{conv_sockaddr(hash[:sockaddr])} )"]
 		elsif hash.include? :pid then
 			@args=["->",hash[:pid],conv_string(syscall[:comm])]
 		else
@@ -89,6 +91,9 @@ Syscalls={
 	%w( c000003e  59 ) => :execve,
 	%w( c000003e  60 ) => :exit,
 	%w( c000003e 231 ) => :exit_group,
+	%w( c000003e  42 ) => :connect,
+	%w( c000003e  49 ) => :bind,
+	%w( c000003e  44 ) => :sendto,
 
 	# x32
 	# These are the same as x86_64, except OR'ed with __X32_SYSCALL_BIT 0x40000000
@@ -98,6 +103,9 @@ Syscalls={
 	%w( c000003e 1073741883 ) => :execve,
 	%w( c000003e 1073741884 ) => :exit,
 	%w( c000003e 1073742055 ) => :exit_group,
+	%w( c000003e 1073741866 ) => :connect,
+	%w( c000003e 1073741873 ) => :bind,
+	%w( c000003e 1073741868 ) => :sendto,
 
 	# i386
 	%w( 40000003 120 ) => :clone,
@@ -106,6 +114,17 @@ Syscalls={
 	%w( 40000003  11 ) => :execve,
 	%w( 40000003   1 ) => :exit,
 	%w( 40000003 252 ) => :exit_group,
+	%w( 40000003 102 ) => :socketcall,
+}
+
+Errnos={
+	"c000003e" => { "-11" => :EAGAIN, "-115" => :EINPROGRESS },
+	"40000003" => { "-11" => :EAGAIN, "-115" => :EINPROGRESS },
+}
+Socketcalls={
+	"2" => :bind,
+	"3" => :connect,
+	"b" => :sendto,
 }
 
 def lookup_syscall(line)
@@ -117,6 +136,24 @@ def conv_string(v)
 		v[1..-2]
 	else
 		[v].pack("H*").inspect[1..-2].gsub(" ","\\ ").gsub("'","\\'")
+	end
+end
+
+def conv_sockaddr(v)
+	bin=[v].pack("H*")
+	case bin.unpack("S")[0]
+		when 0
+			"Unspecified protocol"
+		when 1  # Unix
+			"Unix: "+bin.unpack("xxZ*")[0]
+		when 2  # IPv4
+			"IPv4: %2$d.%3$d.%4$d.%5$d:%1$d"%bin.unpack("xxnC4")
+		when 10 # IPv6
+			"IPv6: [%2$x:%3$x:%4$x:%5$x:%6$x:%7$x:%8$x:%9$x]:%1$d"%bin.unpack("xxnxxxxn8")
+		when 16 # Netlink
+			"Netlink"
+		else
+			"Unknown protocol"
 	end
 end
 
@@ -139,8 +176,8 @@ def parse_event(event_lines)
 		ppid=syscall[:ppid].to_i
 		ps=Ps.pid(pid)
 		ps.parent=ppid
-		if !syscall.include?(:success) or syscall[:success]=="yes" then
-			case lookup_syscall(syscall)
+		if !syscall.include?(:success) or syscall[:success]=="yes" or Errnos[syscall[:arch]].include?(syscall[:exit]) then
+			case v=lookup_syscall(syscall)
 				when :execve
 					execves=event_lines.select { |l| l[:type]=="EXECVE" }
 					if execves and execves.count>0 then
@@ -155,6 +192,14 @@ def parse_event(event_lines)
 					ps.has_event("EXIT  ",syscall)
 				when :exit_group
 					ps.has_event("EXITGR",syscall)
+				when :socketcall
+					if Socketcalls.include? syscall[:a0] then
+						sock=event_lines.find { |l| l[:type]=="SOCKADDR" }
+						ps.has_event("NETWRK",syscall,:net=>Socketcalls[syscall[:a0]],:sockaddr=>sock[:saddr]) if sock
+					end
+				when :connect, :bind, :sendto
+					sock=event_lines.find { |l| l[:type]=="SOCKADDR" }
+					ps.has_event("NETWRK",syscall,:net=>v,:sockaddr=>sock[:saddr]) if sock
 			end
 		end
 	end
