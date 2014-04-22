@@ -82,12 +82,30 @@ class Ps
 end
 
 Syscalls={
-	%w( c000003e 56 ) => :clone,
-	%w( c000003e 57 ) => :fork,
-	%w( c000003e 58 ) => :vfork,
-	%w( c000003e 59 ) => :execve,
-	%w( c000003e 60 ) => :exit,
+	# x86_64
+	%w( c000003e  56 ) => :clone,
+	%w( c000003e  57 ) => :fork,
+	%w( c000003e  58 ) => :vfork,
+	%w( c000003e  59 ) => :execve,
+	%w( c000003e  60 ) => :exit,
 	%w( c000003e 231 ) => :exit_group,
+
+	# x32
+	# These are the same as x86_64, except OR'ed with __X32_SYSCALL_BIT 0x40000000
+	%w( c000003e 1073741880 ) => :clone,
+	%w( c000003e 1073741881 ) => :fork,
+	%w( c000003e 1073741882 ) => :vfork,
+	%w( c000003e 1073741883 ) => :execve,
+	%w( c000003e 1073741884 ) => :exit,
+	%w( c000003e 1073742055 ) => :exit_group,
+
+	# i386
+	%w( 40000003 120 ) => :clone,
+	%w( 40000003   2 ) => :fork,
+	%w( 40000003 190 ) => :vfork,
+	%w( 40000003  11 ) => :execve,
+	%w( 40000003   1 ) => :exit,
+	%w( 40000003 252 ) => :exit_group,
 }
 
 def lookup_syscall(line)
